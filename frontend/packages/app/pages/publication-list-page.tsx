@@ -166,7 +166,11 @@ function PublicationsList({}: {}) {
       <List
         key={trustedOnly ? 'trusted' : 'all'}
         items={items}
+        fixedItemHeight={52}
         header={<DocumentTabs />}
+        onEndReached={() => {
+          publications.fetchNextPage()
+        }}
         renderItem={({item}) => {
           const {publication, author, editors} = item
           if (!publication.document) return null
@@ -240,6 +244,7 @@ function DraftsList() {
   if (drafts.data?.documents.length === 0) {
     return (
       <List
+        fixedItemHeight={52}
         header={<DocumentTabs />}
         items={['You have no current Drafts.']}
         renderItem={({item}) => {
@@ -259,8 +264,13 @@ function DraftsList() {
     <List
       header={<DocumentTabs />}
       items={drafts.data.documents}
+      fixedItemHeight={52}
       renderItem={({item}) => {
         return <DraftListItem key={item.id} draft={item} />
+      }}
+      onEndReached={() => {
+        console.log('== ~ DraftsList ~ onEndReached')
+        drafts.fetchNextPage()
       }}
     />
   )
