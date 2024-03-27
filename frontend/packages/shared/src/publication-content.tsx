@@ -50,6 +50,8 @@ import {
   YStackProps,
 } from '@mintter/ui'
 import {AlertCircle, Book, MessageSquare, Reply} from '@tamagui/lucide-icons'
+import katex from 'katex'
+import 'katex/dist/katex.min.css'
 import {common} from 'lowlight'
 import {nip19, nip21, validateEvent, verifySignature} from 'nostr-tools'
 import {
@@ -650,6 +652,10 @@ function BlockContent(props: BlockContentProps) {
 
   if (props.block.type == 'codeBlock') {
     return <BlockContentCode {...props} block={props.block} />
+  }
+
+  if (props.block.type == 'math') {
+    return <BlockContentMath {...props} block={props.block} />
   }
 
   return <BlockContentUnknown {...props} />
@@ -1688,6 +1694,40 @@ export function BlockContentCode({block, ...props}: BlockContentProps) {
             : block.text}
         </Text>
       </XStack>
+    </YStack>
+  )
+}
+
+export function BlockContentMath({block, ...props}: BlockContentProps) {
+  const {layoutUnit} = usePublicationContentContext()
+
+  const tex = katex.renderToString(block.text ? block.text : '', {
+    throwOnError: true,
+    displayMode: true,
+  })
+
+  return (
+    <YStack
+      {...blockStyles}
+      {...props}
+      className="block-content block-katex"
+      paddingVertical="$3"
+      gap="$2"
+      ai="center"
+      width="100%"
+      borderColor="$color6"
+      backgroundColor="$color4"
+      borderWidth={1}
+      borderRadius={layoutUnit / 4}
+      padding={layoutUnit / 2}
+      overflow="hidden"
+      marginHorizontal={(-1 * layoutUnit) / 2}
+    >
+      <SizableText
+        ai="center"
+        ac="center"
+        dangerouslySetInnerHTML={{__html: tex}}
+      ></SizableText>
     </YStack>
   )
 }
