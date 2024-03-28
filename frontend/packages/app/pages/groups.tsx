@@ -189,6 +189,7 @@ export default function GroupsPage() {
     </Container>
   ) : groups.length > 0 ? (
     <List
+      fixedItemHeight={52}
       items={groups}
       renderItem={({item}) => (
         <GroupListItem
@@ -200,6 +201,10 @@ export default function GroupsPage() {
           }}
         />
       )}
+      onEndReached={() => {
+        console.log('== FETCH NEXT GROUPS')
+        groupQuery.fetchNextPage()
+      }}
     />
   ) : (
     <Container>
