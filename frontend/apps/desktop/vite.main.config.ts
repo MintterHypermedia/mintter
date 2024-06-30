@@ -4,7 +4,7 @@ import {defineConfig} from 'vite'
 import tsConfigPaths from 'vite-tsconfig-paths'
 
 const _tamaguiPlugin = tamaguiPlugin({
-  components: ['@mintter/ui', 'tamagui'],
+  components: ['@shm/ui', 'tamagui'],
   config: './tamagui.config.ts',
   themeBuilder: {
     input: '../../packages/ui/src/themes/theme.ts',
@@ -70,7 +70,17 @@ export default defineConfig(({command, mode}) => {
             }),
             _tamaguiPlugin,
           ]
-        : [tsConfigPaths(), _tamaguiPlugin],
+        : [
+            tsConfigPaths(),
+            _tamaguiPlugin,
+            // {
+            //   name: 'log-files',
+            //   transform(code, id) {
+            //     console.log('Processing file:', id)
+            //     return code
+            //   },
+            // },
+          ],
     alias: {
       'react-native': 'react-native-web',
     },

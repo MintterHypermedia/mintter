@@ -1,0 +1,165 @@
+package sites
+
+import (
+	"context"
+	"errors"
+	"net"
+	"seed/backend/config"
+	"seed/backend/core"
+	"seed/backend/core/coretest"
+	"seed/backend/daemon"
+	"seed/backend/daemon/storage"
+	accounts "seed/backend/genproto/accounts/v1alpha"
+	groups "seed/backend/genproto/groups/v1alpha"
+	"seed/backend/ipfs"
+	"seed/backend/pkg/libp2px"
+	"seed/backend/pkg/must"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+func TestSiteInit(t *testing.T) {
+	t.Parallel()
+
+	site := makeTestSite(t, "carol")
+	ctx := context.Background()
+
+	// Check that we announce our hardcoded web address.
+	{
+		wantAnnounceAddrs := must.Do2(ipfs.ParseMultiaddrs(libp2px.DefaultListenAddrsDNS(site.Address.Hostname(), site.Config.P2P.Port)))
+		require.Equal(t, wantAnnounceAddrs, site.Config.P2P.AnnounceAddrs, "announce addrs don't match")
+	}
+
+	// Check that our secret setup URL is on the correct domain.
+	require.True(t, strings.HasPrefix(site.Website.GetSetupURL(ctx), site.Address.String()), "init secret must have a prefix of the announce address")
+
+	alice := daemon.MakeTestApp(t, "alice", daemon.MakeTestConfig(t), true)
+
+	group, err := alice.RPC.Groups.CreateGroup(ctx, &groups.CreateGroupRequest{
+		Title:        "My test group",
+		SiteSetupUrl: site.Website.GetSetupURL(ctx),
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, group.Id, must.Do2(site.Website.GetGroupID(ctx)), "site must serve the correct group ID")
+
+	init, err := site.Website.InitializeServer(ctx, &groups.InitializeServerRequest{
+		Secret:  site.Website.GetSetupURL(ctx),
+		GroupId: "my-test-group",
+	})
+	require.Nil(t, init)
+	require.Error(t, err, "subsequent init must fail")
+	require.Equal(t, codes.FailedPrecondition, status.Code(err), "subsequent init must fail with precondition error")
+
+	info, err := site.Website.GetSiteInfo(ctx, &groups.GetSiteInfoRequest{})
+	require.NoError(t, err)
+	require.Equal(t, group.Id, info.GroupId, "site must serve the correct group ID")
+	require.Equal(t, "", info.GroupVersion, "version must be empty before publishing")
+}
+
+func TestSiteSync(t *testing.T) {
+	t.Parallel()
+
+	site := makeTestSite(t, "carol")
+	alice := daemon.MakeTestApp(t, "alice", daemon.MakeTestConfig(t), true)
+	bob := daemon.MakeTestApp(t, "bob", daemon.MakeTestConfig(t), true)
+	david := daemon.MakeTestApp(t, "david", daemon.MakeTestConfig(t), true)
+	ctx := context.Background()
+
+	require.NoError(t, alice.Net.MustGet().Connect(ctx, bob.Net.MustGet().AddrInfo()), "alice must connect to bob")
+	require.NoError(t, alice.Syncing.MustGet().SyncWithPeer(ctx, bob.Storage.Device().PeerID()), "alice must have synced with bob")
+
+	group, err := alice.RPC.Groups.CreateGroup(ctx, &groups.CreateGroupRequest{
+		Title: "My test group",
+	})
+	require.NoError(t, err)
+
+	group, err = alice.RPC.Groups.UpdateGroup(ctx, &groups.UpdateGroupRequest{
+		Id: group.Id,
+		UpdatedMembers: map[string]groups.Role{
+			must.Do2(bob.Storage.KeyStore().GetKey(ctx, "main")).String(): groups.Role_EDITOR,
+		},
+	})
+	require.NoError(t, err)
+
+	group, err = alice.RPC.Groups.UpdateGroup(ctx, &groups.UpdateGroupRequest{
+		Id:           group.Id,
+		SiteSetupUrl: site.Website.GetSetupURL(ctx),
+	})
+	require.NoError(t, err)
+
+	_, err = alice.RPC.Groups.SyncGroupSite(ctx, &groups.SyncGroupSiteRequest{GroupId: group.Id})
+	require.NoError(t, err, "alice must be able to sync with the site as an owner")
+	_ = david
+
+	info, err := site.Website.GetSiteInfo(ctx, &groups.GetSiteInfoRequest{})
+	require.NoError(t, err)
+	require.Equal(t, group.Id, info.GroupId, "site must serve the correct group ID")
+	require.NotEqual(t, "", info.GroupVersion, "version must be non-empty after publishing")
+
+	// TODO(burdiyan): add more complex scenarios.
+	// Create doc1.
+	// Create doc2 and link doc2.
+	// Create group.
+	// Publish doc2 to group.
+	// Sync group.
+	// Make sure referenced materials are correctly published.
+
+	bobOnSite, err := site.RPC.Accounts.GetAccount(ctx, &accounts.GetAccountRequest{
+		Id: must.Do2(bob.Storage.KeyStore().GetKey(ctx, "main")).String(),
+	})
+	require.NoError(t, err, "site must get bob's account from the group")
+	require.NotEqual(t, "", bobOnSite.Profile.Alias, "site must have bob's account because he's a member of the group")
+}
+
+func makeTestSite(t *testing.T, name string) *App {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	user := coretest.NewTester(name)
+
+	cfg := testConfig(t)
+	dir, err := storage.Open(cfg.Base.DataDir, user.Device.Wrapped(), core.NewMemoryKeyStore(), "debug")
+	require.NoError(t, err)
+
+	app, err := Load(ctx, "http://127.0.0.1:"+strconv.Itoa(cfg.HTTP.Port), cfg, dir)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		defer dir.Close()
+
+		cancel()
+		err := app.Wait()
+		if err != nil {
+			require.True(t, errors.Is(err, context.Canceled), "unexpected app error: %v", err)
+		}
+	})
+
+	return app
+}
+
+func testConfig(t *testing.T) config.Config {
+	dir := t.TempDir()
+	cfg := DefaultConfig()
+	cfg.Base.DataDir = dir
+	cfg.HTTP.Port = freePort(t)
+	cfg.GRPC.Port = 0
+	cfg.P2P.Port = freePort(t)
+	cfg.P2P.BootstrapPeers = nil
+	cfg.P2P.NoMetrics = true
+
+	return cfg
+}
+
+func freePort(t *testing.T) int {
+	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
+	require.NoError(t, err)
+
+	l, err := net.ListenTCP("tcp", addr)
+	require.NoError(t, err)
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port
+}

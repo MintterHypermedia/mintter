@@ -1,6 +1,6 @@
-import {Check} from '@tamagui/lucide-icons'
+import { Check } from '@tamagui/lucide-icons'
 import React from 'react'
-import {Checkbox, Label, XStack} from 'tamagui'
+import { Checkbox, Label, XStack } from 'tamagui'
 
 export function CheckboxField({
   value,
@@ -16,11 +16,12 @@ export function CheckboxField({
   children: React.ReactNode | string
   id: string
 } & React.ComponentProps<typeof XStack>) {
+  console.log('CheckboxField', {value})
   return (
     <XStack {...props} gap="$3" ai="center">
       <Checkbox
         id={id}
-        value={value ? 'checked' : ''}
+        checked={typeof value == 'boolean' ? value : 'indeterminate'}
         onCheckedChange={onValue}
       >
         <Checkbox.Indicator>

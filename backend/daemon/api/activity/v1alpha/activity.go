@@ -3,17 +3,15 @@ package activity
 
 import (
 	context "context"
-	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"math"
-	"mintter/backend/core"
-	"mintter/backend/daemon/storage"
-	activity "mintter/backend/genproto/activity/v1alpha"
-	"mintter/backend/pkg/dqb"
-	"mintter/backend/pkg/future"
 	"regexp"
-	"strconv"
+	"seed/backend/core"
+	"seed/backend/daemon/apiutil"
+	"seed/backend/daemon/storage"
+	activity "seed/backend/genproto/activity/v1alpha"
+	"seed/backend/pkg/dqb"
 	"strings"
 	"time"
 
@@ -21,56 +19,38 @@ import (
 
 	"crawshaw.io/sqlite"
 	"crawshaw.io/sqlite/sqlitex"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 var resourcePattern = regexp.MustCompile(`^hm://[acdg]/[a-zA-Z0-9]+$`)
 
-// Repo is a subset of the [ondisk.OnDisk] used by this server.
-type Repo interface {
-	Device() core.KeyPair
-	Identity() *future.ReadOnly[core.Identity]
-	CommitAccount(core.PublicKey) error
-}
-
 // Server implements the Activity gRPC API.
 type Server struct {
-	me        *future.ReadOnly[core.Identity]
 	db        *sqlitex.Pool
 	startTime time.Time
 }
 
 // NewServer creates a new Server.
-func NewServer(id *future.ReadOnly[core.Identity], db *sqlitex.Pool) *Server {
+func NewServer(db *sqlitex.Pool) *Server {
 	return &Server{
 		db:        db,
 		startTime: time.Now(),
-		me:        id,
 	}
+}
+
+// RegisterServer registers the server with the gRPC server.
+func (srv *Server) RegisterServer(rpc grpc.ServiceRegistrar) {
+	activity.RegisterActivityFeedServer(rpc, srv)
 }
 
 // ListEvents list all the events seen locally.
 func (srv *Server) ListEvents(ctx context.Context, req *activity.ListEventsRequest) (*activity.ListEventsResponse, error) {
-	me, ok := srv.me.Get()
-	if !ok {
-		return nil, fmt.Errorf("account is not initialized yet")
-	}
 	var cursorBlobID int64 = math.MaxInt32
-	var err error
 	if req.PageToken != "" {
-		pageTokenBytes, err := base64.StdEncoding.DecodeString(req.PageToken)
-		if err != nil {
-			return nil, fmt.Errorf("Token encoding not valid: %w", err)
+		if err := apiutil.DecodePageToken(req.PageToken, &cursorBlobID, nil); err != nil {
+			return nil, fmt.Errorf("failed to decode page token: %w", err)
 		}
-		clearPageToken, err := me.DeviceKey().Decrypt(pageTokenBytes)
-		if err != nil {
-			return nil, fmt.Errorf("Token not valid: %w", err)
-		}
-		pageToken, err := strconv.ParseUint(string(clearPageToken), 10, 32)
-		if err != nil {
-			return nil, fmt.Errorf("Token not valid: %w", err)
-		}
-		cursorBlobID = int64(pageToken)
 	}
 	conn, cancel, err := srv.db.Conn(ctx)
 	if err != nil {
@@ -198,17 +178,17 @@ func (srv *Server) ListEvents(ctx context.Context, req *activity.ListEventsReque
 	if err != nil {
 		return nil, fmt.Errorf("Problem collecting activity feed, Probably no feed or token out of range: %w", err)
 	}
-	var PageTokenStr string
 
-	pageToken, err := me.DeviceKey().Encrypt([]byte(strconv.Itoa(int(lastBlobID - 1))))
-	if err != nil {
-		return nil, err
-	}
+	var nextPageToken string
 	if lastBlobID != 0 && req.PageSize == int32(len(events)) {
-		PageTokenStr = base64.StdEncoding.EncodeToString(pageToken)
+		nextPageToken, err = apiutil.EncodePageToken(lastBlobID-1, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode next page token: %w", err)
+		}
 	}
+
 	return &activity.ListEventsResponse{
 		Events:        events,
-		NextPageToken: PageTokenStr,
+		NextPageToken: nextPageToken,
 	}, err
 }

@@ -8,14 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"mintter/backend/core"
-	entities "mintter/backend/genproto/entities/v1alpha"
-	"mintter/backend/hlc"
-	"mintter/backend/hyper"
-	"mintter/backend/hyper/hypersql"
-	"mintter/backend/pkg/colx"
-	"mintter/backend/pkg/dqb"
-	"mintter/backend/pkg/errutil"
+	"seed/backend/core"
+	entities "seed/backend/genproto/entities/v1alpha"
+	"seed/backend/hlc"
+	"seed/backend/hyper"
+	"seed/backend/hyper/hypersql"
+	"seed/backend/pkg/colx"
+	"seed/backend/pkg/dqb"
+	"seed/backend/pkg/errutil"
 	"sort"
 	"strconv"
 	"strings"
@@ -26,6 +26,7 @@ import (
 	"crawshaw.io/sqlite/sqlitex"
 	"github.com/ipfs/go-cid"
 	"golang.org/x/exp/slices"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -49,6 +50,11 @@ func NewServer(blobs *hyper.Storage, disc Discoverer) *Server {
 		blobs: blobs,
 		disc:  disc,
 	}
+}
+
+// RegisterServer registers the server with the gRPC server.
+func (srv *Server) RegisterServer(rpc grpc.ServiceRegistrar) {
+	entities.RegisterEntitiesServer(rpc, srv)
 }
 
 // GetChange implements the Changes server.

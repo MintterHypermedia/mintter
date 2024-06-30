@@ -25,12 +25,12 @@ scrape_configs:
     # scheme defaults to 'http'.
     static_configs:
       - targets: ["prometheus:9090"]
-  - job_name: "mintterd"
+  - job_name: "seed-daemon"
     metrics_path: "/debug/metrics"
     static_configs:
       - targets: ["host.docker.internal:55001"] # Release app.
       - targets: ["host.docker.internal:56001"] # Dev app.
-      - targets: ["minttersite:56001"]
+      - targets: ["seed-site:56001"]
   - job_name: electron
     metrics_path: /debug/metrics
     static_configs:

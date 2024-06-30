@@ -1,13 +1,17 @@
-import {EditorInlineContent} from '@mintter/editor'
+import {PlainMessage} from '@bufbuild/protobuf'
+import {
+  Block,
+  EditorInlineContent,
+  hmBlockSchema,
+} from '@shm/desktop/src/editor'
 import type {
   Account,
   ChangeInfo,
-  Device,
-  Group_SiteInfo,
-  MttLink,
-  Profile,
-  Publication,
-} from '@mintter/shared'
+  Comment,
+  DeletedEntity,
+  Document,
+  Link,
+} from '@shm/shared'
 import {HMTimestamp} from './utils'
 
 export type ServerChangeInfo = ChangeInfo
@@ -19,54 +23,9 @@ export type HMChangeInfo = {
   deps?: string[]
 }
 
-export type ServerPublication = Publication
-export type HMPublication = {
-  document?: HMDocument
-  version?: string
-}
+export type HMAccount = PlainMessage<Account>
 
-export type ServerGroupSiteInfo = Group_SiteInfo
-export type HMGroupSiteInfo = {
-  baseUrl?: string
-  lastSyncTime?: HMTimestamp
-  lastOkSyncTime?: HMTimestamp
-  version?: string
-}
-
-export type ServerDevice = Device
-export type HMDevice = {
-  deviceId?: string
-}
-
-export type ServerProfile = Profile
-export type HMProfile = {
-  alias?: string
-  bio?: string
-  avatar?: string
-  rootDocument?: string
-}
-
-export type ServerAccount = Account
-export type HMAccount = {
-  id?: string
-  profile?: HMProfile
-  devices?: {[key: string]: HMDevice}
-}
-
-export type ServerLink = MttLink
-export type HMLink = {
-  target?: {
-    documentId?: string
-    version?: string
-    blockId?: string
-  }
-  source?: {
-    documentId?: string
-    version?: string
-    blockId?: string
-  }
-  isLatest?: boolean
-}
+export type HMLink = PlainMessage<Link>
 
 export type HMBlockChildrenType = 'group' | 'ol' | 'ul' | 'div' | 'blockquote'
 export type HMEmbedDisplay = 'content' | 'card'
@@ -219,36 +178,9 @@ export type HMBlockNode = {
   children?: Array<HMBlockNode>
 }
 
-export type HMDocument = {
-  title?: string
-  id?: string
-  author?: string
-  webUrl?: string
-  editors?: Array<string>
-  children?: Array<HMBlockNode>
-  createTime?: HMTimestamp
-  updateTime?: HMTimestamp
-  publishTime?: HMTimestamp
-  version?: string
-  previousVersion?: string
-}
+export type HMDocument = PlainMessage<Document>
 
-export type HMGroup = {
-  id?: string
-  title?: string
-  description?: string
-  ownerAccountId?: string
-  createTime?: HMTimestamp
-  version?: string
-  siteInfo?: HMGroupSiteInfo
-}
-
-export type HMDeletedEntity = {
-  id?: string
-  deleteTime?: HMTimestamp
-  deletedReason?: string
-  metadata?: string
-}
+export type HMDeletedEntity = PlainMessage<DeletedEntity>
 
 export type HMEntity =
   | {
@@ -256,44 +188,26 @@ export type HMEntity =
       account: HMAccount
     }
   | {
-      type: 'g'
-      group: HMGroup
-    }
-  | {
       type: 'd'
-      publication: HMPublication
+      document: HMDocument
     }
 
 export type HMEntityContent =
   | {
       type: 'a'
-      account: HMAccount
-      document?: HMDocument
-    }
-  | {
-      type: 'g'
-      group: HMGroup
-      document?: HMDocument
+      document?: HMDocument | null
+      account?: HMAccount | null
     }
   | {
       type: 'd'
-      publication: HMPublication
       document?: HMDocument
     }
   | {
       type: 'd-draft'
       document: HMDocument
-      homeGroup: HMGroup | undefined
     }
 
-export type HMComment = {
-  id: string
-  target?: string
-  repliedComment?: string
-  author?: string
-  content?: Array<HMBlockNode>
-  createTime?: HMTimestamp
-}
+export type HMComment = PlainMessage<Comment>
 
 export type InlineEmbedAnnotation = BaseAnnotation & {
   type: 'inline-embed'
@@ -361,4 +275,14 @@ export type HMCommentDraft = {
   targetCommentId: string | null
   publishTime: number | null
   commentId: string
+}
+
+export type HMDraft = {
+  title: string
+  content: Array<Block<typeof hmBlockSchema>>
+  metadata: HMDocument['metadata']
+  members: any //HMDocument['members']
+  index: HMDocument['index']
+  deps: Array<string>
+  signingAccount: string
 }

@@ -30,9 +30,9 @@ After spending a few years with Please we realized that it has one fundamental p
 
 We want to have a superb DX on all the platforms, such that you only need to install one or two tools, run a single command to build/test everything, never have to rebuild things twice, or wait long minutes until your build finishes. We want that on Windows too. So at some point we'll probably switch from Please to Bazel or Buck2 for building, and switch from Nix to Pixi for managing our tools. But refactoring the build system didn't become important enough yet, compared to other things we're trying to build at this time.
 
-## Mintter Specifics
+## Seed Specifics
 
-All the devs at Mintter use macOS or Linux for development, so most of the scripts, tools, and conveniences only work these. We want to improve the DX on Windows, but we can't invest the time in that just yet.
+All the devs at Seed use macOS or Linux for development, so most of the scripts, tools, and conveniences only work these. We want to improve the DX on Windows, but we can't invest the time in that just yet.
 
 We do build *for* Windows *on* Windows in CI though, so building everything on Windows is entirely possible, just not as convenient as on Unix-based systems.
 
@@ -69,8 +69,8 @@ Take a look around `.github/workflows` directory (especially `.github/workflows/
 
 To build the desktop app:
 
-1. Create a directory `plz-out/bin/backend` which is where Electron build system expects the `mintterd` binary to be.
-2. Build `mintterd` with `go build -o plz-out/bin/backend/mintterd-<llvm-platform-triple> ./backend/cmd/mintterd`.
+1. Create a directory `plz-out/bin/backend` which is where Electron build system expects the `seed-daemon` binary to be.
+2. Build `seed-daemon` with `go build -o plz-out/bin/backend/seed-daemon-<llvm-platform-triple> ./backend/cmd/seed-daemon`.
     - Make sure `CGO_ENABLED=1` env variable is set.
     - The `llvm-platform-triple` depends on the platform you're on. See the values we use in CI here: https://github.com/MintterHypermedia/mintter/blob/d7582fed90840eae953a191b779ef5285b9c21b1/.github/workflows/desktop-release.yml#L63-L79.
     - On Windows add `.exe` to the output path.

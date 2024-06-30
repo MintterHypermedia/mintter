@@ -2,10 +2,11 @@ package backend
 
 import (
 	"context"
-	"mintter/backend/daemon/storage"
-	"mintter/backend/hyper"
-	"mintter/backend/pkg/must"
-	"os"
+	"seed/backend/core"
+	"seed/backend/daemon/storage"
+	"seed/backend/hyper"
+	"seed/backend/pkg/must"
+	"seed/backend/testutil"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -18,27 +19,20 @@ func TestDBMigrateManual(t *testing.T) {
 	// Run it from the command line as:
 	//
 	// ```
-	// MINTTER_MANUAL_DB_MIGRATE_TEST=1 go test -run 'TestDBMigrateManual' ./backend -count=1 -v
+	// SEED_MANUAL_DB_MIGRATE_TEST=1 go test -run 'TestDBMigrateManual' ./backend -count=1 -v
 	// ```
 	//
-	// Before running the test duplicate your entire production data directory to /tmp/mintter-db-migrate-test.
-	if os.Getenv("MINTTER_MANUAL_DB_MIGRATE_TEST") == "" {
-		t.SkipNow()
-		return
-	}
+	// Before running the test duplicate your entire production data directory to /tmp/seed-db-migrate-test.
+	testutil.Manual(t)
 
-	dir, err := storage.InitRepo("/tmp/mintter-db-migrate-test", nil, "debug")
+	dir, err := storage.Open("/tmp/seed-db-migrate-test", nil, core.NewMemoryKeyStore(), "debug")
 	require.NoError(t, err)
+	defer dir.Close()
 
-	_ = dir
+	db := dir.DB()
 
 	log := must.Do2(zap.NewDevelopment())
 
-	db, err := storage.OpenSQLite(dir.SQLitePath(), 0, 1)
-	require.NoError(t, err)
-	defer db.Close()
-
 	blobs := hyper.NewStorage(db, log)
-
 	require.NoError(t, blobs.Reindex(context.Background()))
 }

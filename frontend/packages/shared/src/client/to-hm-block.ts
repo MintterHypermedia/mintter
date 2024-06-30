@@ -19,7 +19,7 @@ import {
 } from '../hm-types'
 import {getCIDFromIPFSUrl} from '../utils'
 import {Annotation} from './.generated/documents/v1alpha/documents_pb'
-// import {Annotation, Block, BlockNode, HMTextAnnotation} from '@mintter/shared'
+// import {Annotation, Block, BlockNode, HMTextAnnotation} from '@shm/shared'
 // import {hmBlockSchema} from './schema'
 
 function areStylesEqual(
@@ -285,7 +285,7 @@ export function toHMBlockMath(
 }
 
 export function toHMBlock(
-  children: HMBlockNode[] = [],
+  content: HMBlockNode[] = [],
   opts: ServerToEditorRecursiveOpts & {
     childrenType?: HMBlockChildrenType
     listLevel?: string
@@ -295,7 +295,7 @@ export function toHMBlock(
   const childRecursiveOpts: ServerToEditorRecursiveOpts = {
     level: opts?.level || 0,
   }
-  return children.map((serverBlock) => {
+  return content.map((serverBlock) => {
     let res: HMBlock | null = null
     if (serverBlock.block?.type == 'image') {
       res = {

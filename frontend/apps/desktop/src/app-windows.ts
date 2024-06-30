@@ -1,8 +1,8 @@
-import appError from '@mintter/app/errors'
-import type {NavState} from '@mintter/app/utils/navigation'
-import {NavRoute, defaultRoute} from '@mintter/app/utils/routes'
-import type {AppWindowEvent} from '@mintter/app/utils/window-events'
-import {getRouteWindowType} from '@mintter/app/utils/window-types'
+import appError from '@/errors'
+import type {NavState} from '@/utils/navigation'
+import {NavRoute, defaultRoute} from '@/utils/routes'
+import type {AppWindowEvent} from '@/utils/window-events'
+import {getRouteWindowType} from '@/utils/window-types'
 import {
   BrowserView,
   BrowserWindow,
@@ -204,10 +204,7 @@ export function createAppWindow(input: {
       ? path.resolve(__dirname, '../assets/icons-nightly/icon.png')
       : path.resolve(__dirname, '../assets/icons/icon.png'),
     titleBarStyle: 'hidden',
-    trafficLightPosition: {
-      x: 12,
-      y: 12,
-    },
+    trafficLightPosition: windowType.trafficLightPosition || undefined,
   })
 
   createFindView(browserWindow)

@@ -3,22 +3,20 @@ package wallet
 import (
 	"context"
 	"encoding/hex"
-	"mintter/backend/config"
-	"mintter/backend/core"
-	"mintter/backend/core/coretest"
-	daemon "mintter/backend/daemon/api/daemon/v1alpha"
-	"mintter/backend/daemon/storage"
-	"mintter/backend/hyper"
-	"mintter/backend/lndhub"
-	"mintter/backend/lndhub/lndhubsql"
-	"mintter/backend/logging"
-	"mintter/backend/mttnet"
-	"mintter/backend/pkg/future"
-	"mintter/backend/wallet/walletsql"
+	"seed/backend/config"
+	"seed/backend/core/coretest"
+	daemon "seed/backend/daemon/api/daemon/v1alpha"
+	"seed/backend/daemon/storage"
+	"seed/backend/hyper"
+	"seed/backend/lndhub"
+	"seed/backend/lndhub/lndhubsql"
+	"seed/backend/logging"
+	"seed/backend/mttnet"
+	"seed/backend/pkg/future"
+	"seed/backend/wallet/walletsql"
 	"testing"
 	"time"
 
-	"crawshaw.io/sqlite/sqlitex"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
@@ -33,10 +31,10 @@ func TestModifyWallets(t *testing.T) {
 	var defaultWallet walletsql.Wallet
 	uri, err := alice.ExportWallet(ctx, "")
 	require.NoError(t, err)
-	mintterWallet, err := alice.InsertWallet(ctx, uri, "default")
+	seedWallet, err := alice.InsertWallet(ctx, uri, "default")
 	require.NoError(t, err)
 	require.Eventually(t, func() bool { defaultWallet, err = alice.GetDefaultWallet(ctx); return err == nil }, 7*time.Second, 2*time.Second)
-	require.Equal(t, mintterWallet, defaultWallet)
+	require.Equal(t, seedWallet, defaultWallet)
 	require.Eventually(t, func() bool {
 		conn, release, err := alice.pool.Conn(ctx)
 		require.NoError(t, err)
@@ -71,8 +69,10 @@ func TestRequestLndHubInvoice(t *testing.T) {
 	require.NoError(t, err)
 	_, err = bob.InsertWallet(ctx, bobURI, "default")
 	require.NoError(t, err)
-	require.Eventually(t, func() bool { _, ok := bob.net.Get(); return ok }, 5*time.Second, 1*time.Second)
-	cid := bob.net.MustGet().ID().Account().Principal()
+
+	kp, err := bob.keyStore.GetKey(ctx, "main")
+	require.NoError(t, err)
+	bobAccount := kp.Principal()
 	var amt uint64 = 23
 	var wrongAmt uint64 = 24
 	var memo = "test invoice"
@@ -88,7 +88,7 @@ func TestRequestLndHubInvoice(t *testing.T) {
 		return err == nil
 	}, 3*time.Second, 1*time.Second)
 	require.Eventually(t, func() bool {
-		payreq, err = alice.RequestRemoteInvoice(ctx, cid.String(), int64(amt), &memo)
+		payreq, err = alice.RequestRemoteInvoice(ctx, bobAccount.String(), int64(amt), &memo)
 		return err == nil
 	}, 8*time.Second, 2*time.Second)
 	invoice, err := lndhub.DecodeInvoice(payreq)
@@ -108,18 +108,16 @@ func TestRequestP2PInvoice(t *testing.T) {
 	bob := makeTestService(t, "bob")
 	ctx := context.Background()
 
-	require.Eventually(t, func() bool { _, ok := alice.net.Get(); return ok }, 5*time.Second, 1*time.Second)
-	require.NoError(t, alice.net.MustGet().Connect(ctx, bob.net.MustGet().AddrInfo()))
+	bobAccount, err := bob.net.AccountForDevice(ctx, bob.net.AddrInfo().ID)
+	require.NoError(t, err)
+	require.NoError(t, alice.net.Connect(ctx, bob.net.AddrInfo()))
 
-	require.Eventually(t, func() bool { _, ok := bob.net.Get(); return ok }, 3*time.Second, 1*time.Second)
-	cid := bob.net.MustGet().ID().Account().Principal()
 	var amt uint64 = 23
 	var wrongAmt uint64 = 24
 	var memo = "test invoice"
-	var err error
 	var payreq string
 	require.Eventually(t, func() bool {
-		payreq, err = alice.RequestRemoteInvoice(ctx, cid.String(), int64(amt), &memo)
+		payreq, err = alice.RequestRemoteInvoice(ctx, bobAccount.String(), int64(amt), &memo)
 		return err == nil
 	}, 8*time.Second, 2*time.Second)
 	invoice, err := lndhub.DecodeInvoice(payreq)
@@ -135,23 +133,16 @@ func TestRequestP2PInvoice(t *testing.T) {
 func makeTestService(t *testing.T, name string) *Service {
 	u := coretest.NewTester(name)
 
-	db := storage.MakeTestDB(t)
-
-	node, closenode := makeTestPeer(t, u, db)
+	repo := storage.MakeTestRepo(t)
+	db := repo.DB()
+	node, closenode := makeTestPeer(t, u, repo)
 	t.Cleanup(closenode)
-
-	fut := future.New[*mttnet.Node]()
-	require.NoError(t, fut.Resolve(node))
-
-	identity := future.New[core.Identity]()
-
-	require.NoError(t, identity.Resolve(u.Identity))
 
 	conn, release, err := db.Conn(context.Background())
 	require.NoError(t, err)
 	defer release()
 
-	signature, err := u.Account.Sign([]byte(lndhub.SigninMessage))
+	signature, err := u.Account.Sign([]byte(lndhub.SigningMessage))
 	require.NoError(t, err)
 
 	require.NoError(t, lndhubsql.SetLoginSignature(conn, hex.EncodeToString(signature)))
@@ -159,22 +150,21 @@ func makeTestService(t *testing.T, name string) *Service {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	t.Cleanup(cancel)
-
-	srv := New(ctx, logging.New("mintter/wallet", "debug"), db, fut.ReadOnly, identity.ReadOnly, false)
+	require.NoError(t, repo.KeyStore().StoreKey(ctx, "main", u.Account))
+	srv := New(ctx, logging.New("seed/wallet", "debug"), repo.DB(), repo.KeyStore(), "main", node, false)
 
 	return srv
 }
 
-func makeTestPeer(t *testing.T, u coretest.Tester, db *sqlitex.Pool) (*mttnet.Node, context.CancelFunc) {
-	blobs := hyper.NewStorage(db, logging.New("mintter/hyper", "debug"))
+func makeTestPeer(t *testing.T, u coretest.Tester, store *storage.Store) (*mttnet.Node, context.CancelFunc) {
+	blobs := hyper.NewStorage(store.DB(), logging.New("seed/hyper", "debug"))
 	_, err := daemon.Register(context.Background(), blobs, u.Account, u.Device.PublicKey, time.Now())
 	require.NoError(t, err)
-
 	n, err := mttnet.New(config.P2P{
 		NoRelay:        true,
 		BootstrapPeers: nil,
 		NoMetrics:      true,
-	}, db, blobs, u.Identity, zap.NewNop(), "debug")
+	}, store.Device(), store.KeyStore(), store.DB(), blobs, zap.NewNop())
 	require.NoError(t, err)
 
 	errc := make(chan error, 1)

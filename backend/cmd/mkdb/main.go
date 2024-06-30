@@ -7,11 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"mintter/backend/config"
-	"mintter/backend/core/coretest"
-	"mintter/backend/daemon"
-	"mintter/backend/daemon/storage"
 	"os"
+	"seed/backend/config"
+	"seed/backend/core"
+	"seed/backend/core/coretest"
+	storage "seed/backend/daemon/storage2"
 
 	"github.com/burdiyan/go/mainutil"
 )
@@ -21,15 +21,12 @@ func main() {
 }
 
 func run() error {
-	ctx, cancel := context.WithCancel(mainutil.TrapSignals())
-	defer cancel()
-
 	alice := coretest.NewTester("alice")
 
 	cfg := config.Default()
 	cfg.P2P.NoRelay = true
 	cfg.P2P.BootstrapPeers = nil
-	cfg.Base.DataDir = "/tmp/mintter-test-db-snapshot"
+	cfg.Base.DataDir = "/tmp/seed-test-db-snapshot"
 
 	if err := os.RemoveAll(cfg.Base.DataDir); err != nil {
 		return err
@@ -39,23 +36,12 @@ func run() error {
 		return err
 	}
 
-	dir, err := storage.InitRepo(cfg.Base.DataDir, alice.Device.Wrapped(), cfg.LogLevel)
+	dir, err := storage.Open(cfg.Base.DataDir, alice.Device.Wrapped(), core.NewMemoryKeyStore(), cfg.LogLevel)
 	if err != nil {
 		return err
 	}
+	defer dir.Close()
 
-	app, err := daemon.Load(ctx, cfg, dir, "debug")
-	if err != nil {
-		return err
-	}
-
-	if err := app.RPC.Daemon.RegisterAccount(ctx, alice.Account); err != nil {
-		return err
-	}
-
-	cancel()
-
-	err = app.Wait()
 	fmt.Println("Database has been saved in:", cfg.Base.DataDir)
 	if errors.Is(err, context.Canceled) {
 		return nil

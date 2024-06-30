@@ -1,10 +1,11 @@
 // Helpers copied from https://github.com/kubeshop/monokle/blob/main/tests/electronHelpers.ts
-import {Page, _electron as electron} from '@playwright/test'
+import { Page, _electron as electron } from '@playwright/test'
 import * as ASAR from 'asar'
 import * as fs from 'fs'
 import log from 'loglevel'
 import os from 'os'
 import * as path from 'path'
+import { ElectronAppInfo } from './types'
 
 /**
  * Find the latest build and start monokle app for testing
@@ -62,6 +63,9 @@ export async function startApp() {
   // await appWindow.screenshot({
   //   path: getRecordingPath(appInfo.platform, 'initial-screen.png'),
   // });
+  await electronApp.on('window', () => {
+    console.log('-- helloooo')
+  })
   return {
     getWindow: async () => await electronApp.firstWindow(),
     appInfo,
@@ -300,8 +304,8 @@ export function parseElectronApp(buildDir: string): ElectronAppInfo {
   }
 }
 
-const MAC_CONFIG_PATH = ['Library', 'Application Support', 'Mintter']
-const WIN_CONFIG_PATH = ['AppData', 'Roaming', 'Mintter']
+const MAC_CONFIG_PATH = ['Library', 'Application Support', 'Seed']
+const WIN_CONFIG_PATH = ['AppData', 'Roaming', 'Seed']
 
 export const deleteApplicationConfig = (platform: string) => {
   let tempPath

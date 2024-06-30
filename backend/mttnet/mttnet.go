@@ -1,21 +1,21 @@
-// Package mttnet provides Mintter P2P network functionality.
+// Package mttnet provides Seed P2P network functionality.
 package mttnet
 
 import (
 	"context"
 	"fmt"
 	"io"
-	"mintter/backend/config"
-	"mintter/backend/core"
-	groups_proto "mintter/backend/genproto/groups/v1alpha"
-	p2p "mintter/backend/genproto/p2p/v1alpha"
-	"mintter/backend/hyper"
-	"mintter/backend/hyper/hypersql"
-	"mintter/backend/ipfs"
-	"mintter/backend/pkg/cleanup"
-	"mintter/backend/pkg/libp2px"
-	"mintter/backend/pkg/must"
 	"net/http"
+	"seed/backend/config"
+	"seed/backend/core"
+	groups_proto "seed/backend/genproto/groups/v1alpha"
+	p2p "seed/backend/genproto/p2p/v1alpha"
+	"seed/backend/hyper"
+	"seed/backend/hyper/hypersql"
+	"seed/backend/ipfs"
+	"seed/backend/pkg/cleanup"
+	"seed/backend/pkg/libp2px"
+	"seed/backend/pkg/must"
 	"strings"
 	"time"
 
@@ -44,9 +44,14 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-const protocolSupportKey = "mintter-support" // This is what we use as a key to protect the connection in ConnManager.
+const protocolSupportKey = "seed-support" // This is what we use as a key to protect the connection in ConnManager.
 
-var userAgent = "mintter/<dev>"
+const (
+	protocolPrefix  = "/hypermedia/"
+	protocolVersion = "0.4.0"
+)
+
+var userAgent = "seed/<dev>"
 
 // GatewayClient is the bridge to talk to the gateway.
 type GatewayClient interface {
@@ -66,10 +71,10 @@ type WebsiteClient interface {
 	PublishBlobs(context.Context, *groups_proto.PublishBlobsRequest, ...grpc.CallOption) (*groups_proto.PublishBlobsResponse, error)
 }
 
-// DefaultRelays bootstrap mintter-owned relays so they can reserve slots to do holepunch.
+// DefaultRelays bootstrap seed-owned relays so they can reserve slots to do holepunch.
 func DefaultRelays() []peer.AddrInfo {
 	return []peer.AddrInfo{
-		// Mintter prod server
+		// Seed prod server
 		{
 			ID: must.Do2(peer.Decode("12D3KooWNmjM4sMbSkDEA6ShvjTgkrJHjMya46fhZ9PjKZ4KVZYq")),
 			Addrs: []multiaddr.Multiaddr{
@@ -77,7 +82,7 @@ func DefaultRelays() []peer.AddrInfo {
 				must.Do2(multiaddr.NewMultiaddr("/ip4/23.20.24.146/udp/4002/quic-v1")),
 			},
 		},
-		// Mintter test server
+		// Seed test server
 		{
 			ID: must.Do2(peer.Decode("12D3KooWGvsbBfcbnkecNoRBM7eUTiuriDqUyzu87pobZXSdUUsJ")),
 			Addrs: []multiaddr.Multiaddr{
@@ -106,12 +111,13 @@ type rpcMux struct {
 	Node *Node
 }
 
-// Node is a Mintter P2P node.
+// Node is a Seed P2P node.
 type Node struct {
 	log      *zap.Logger
 	blobs    *hyper.Storage
 	db       *sqlitex.Pool
-	me       core.Identity
+	device   core.KeyPair
+	keys     core.KeyStore
 	cfg      config.P2P
 	invoicer Invoicer
 	client   *Client
@@ -128,10 +134,10 @@ type Node struct {
 
 // New creates a new P2P Node. The users must call Start() before using the node, and can use Ready() to wait
 // for when the node is ready to use.
-func New(cfg config.P2P, db *sqlitex.Pool, blobs *hyper.Storage, me core.Identity, log *zap.Logger, extraServers ...interface{}) (*Node, error) {
+func New(cfg config.P2P, device core.KeyPair, ks core.KeyStore, db *sqlitex.Pool, blobs *hyper.Storage, log *zap.Logger) (*Node, error) {
 	var clean cleanup.Stack
 
-	host, closeHost, err := newLibp2p(cfg, me.DeviceKey().Wrapped())
+	host, closeHost, err := newLibp2p(cfg, device.Wrapped())
 	if err != nil {
 		return nil, fmt.Errorf("failed to start libp2p host: %w", err)
 	}
@@ -160,16 +166,17 @@ func New(cfg config.P2P, db *sqlitex.Pool, blobs *hyper.Storage, me core.Identit
 		testnetSuffix = "-" + cfg.TestnetName
 	}
 
-	protoInfo := newProtocolInfo("/hypermedia/", "0.3.0"+testnetSuffix)
+	protoInfo := newProtocolInfo(protocolPrefix, protocolVersion+testnetSuffix)
 
-	client := newClient(me, host, protoInfo.ID)
+	client := newClient(device.PeerID(), host, protoInfo.ID)
 	clean.Add(client)
 
 	n := &Node{
 		log:       log,
 		blobs:     blobs,
 		db:        db,
-		me:        me,
+		device:    device,
+		keys:      ks,
 		cfg:       cfg,
 		client:    client,
 		protocol:  protoInfo,
@@ -184,13 +191,6 @@ func New(cfg config.P2P, db *sqlitex.Pool, blobs *hyper.Storage, me core.Identit
 	rpc := &rpcMux{Node: n}
 	p2p.RegisterP2PServer(n.grpc, rpc)
 
-	for _, extra := range extraServers {
-		if extraServer, ok := extra.(groups_proto.WebsiteServer); ok {
-			groups_proto.RegisterWebsiteServer(n.grpc, extraServer)
-			break
-		}
-	}
-
 	return n, nil
 }
 
@@ -199,14 +199,15 @@ func (n *Node) SetInvoicer(inv Invoicer) {
 	n.invoicer = inv
 }
 
-// ID returns the node's identity.
-func (n *Node) ID() core.Identity {
-	return n.me
-}
-
 // Provider returns the underlying providing system for convenience.
 func (n *Node) Provider() provider.System {
 	return n.providing
+}
+
+// RegisterRPCService allows registering additional gRPC services to be exposed over libp2p.
+// This function must be called before calling Start().
+func (n *Node) RegisterRPCService(fn func(grpc.ServiceRegistrar)) {
+	fn(n.grpc)
 }
 
 // ProvideCID notifies the providing system to provide the given CID on the DHT.
@@ -368,7 +369,7 @@ func (n *Node) Start(ctx context.Context) (err error) {
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	// Start Mintter protocol listener over libp2p.
+	// Start Hyper Media protocol listener over libp2p.
 	{
 		g.Go(func() error {
 			return n.grpc.Serve(lis)

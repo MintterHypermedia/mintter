@@ -1,7 +1,8 @@
-import {resolveHmIdToAppRoute} from '@mintter/app/utils/navigation'
-import {NavRoute, defaultRoute, navRouteSchema} from '@mintter/app/utils/routes'
-import type {AppWindowEvent} from '@mintter/app/utils/window-events'
-import {API_GRPC_URL, API_HTTP_URL} from '@mintter/shared'
+import {resolveHmIdToAppRoute} from '@/utils/navigation'
+import {NavRoute, defaultRoute, navRouteSchema} from '@/utils/routes'
+import type {AppWindowEvent} from '@/utils/window-events'
+import {API_GRPC_URL, API_HTTP_URL} from '@shm/shared/src/constants'
+
 import {
   BrowserWindow,
   NativeImage,
@@ -16,6 +17,7 @@ import path from 'path'
 import z from 'zod'
 import {commentsApi} from './app-comments'
 import {diagnosisApi} from './app-diagnosis'
+import {draftsApi} from './app-drafts'
 import {experimentsApi} from './app-experiments'
 import {favoritesApi} from './app-favorites'
 import {gatewaySettingsApi} from './app-gateway-settings'
@@ -23,6 +25,7 @@ import {grpcClient} from './app-grpc'
 import {invalidateQueries, queryInvalidation} from './app-invalidation'
 import {userDataPath} from './app-paths'
 import {recentsApi} from './app-recents'
+import {secureStorageApi} from './app-secure-storage'
 import {appSettingsApi} from './app-settings'
 import {t} from './app-trpc'
 import {uploadFile, webImportingApi} from './app-web-importing'
@@ -138,15 +141,15 @@ export function openRoute(route: NavRoute) {
 
 function getRouteRefocusKey(route: NavRoute): string | null {
   if (route.key === 'account') return null
-  if (route.key === 'publication') return null
+  if (route.key === 'document') return null
   if (route.key === 'comment') return null
   if (route.key === 'comment-draft') return null
-  if (route.key === 'group') return null
   if (route.key === 'draft') return null
   return route.key
 }
 
 export const router = t.router({
+  drafts: draftsApi,
   experiments: experimentsApi,
   diagnosis: diagnosisApi,
   welcoming: welcomingApi,
@@ -154,6 +157,7 @@ export const router = t.router({
   favorites: favoritesApi,
   comments: commentsApi,
   gatewaySettings: gatewaySettingsApi,
+  secureStorage: secureStorageApi,
   recents: recentsApi,
   appSettings: appSettingsApi,
   closeAppWindow: t.procedure.input(z.string()).mutation(async ({input}) => {

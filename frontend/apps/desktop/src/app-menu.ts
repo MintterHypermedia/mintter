@@ -1,7 +1,7 @@
 // this menu is visible on macOS only
 // the keyboard shortcuts apply to every platform
 
-import {defaultRoute} from '@mintter/app/utils/routes'
+import {defaultRoute} from '@/utils/routes'
 import {Menu, MenuItem} from 'electron'
 import {dispatchFocusedWindowAppEvent, openRoute, trpc} from './app-api'
 
@@ -11,7 +11,7 @@ export function createAppMenu() {
   appMenu.append(
     new MenuItem({
       role: 'appMenu',
-      label: 'Mintter',
+      label: 'Seed',
       submenu: [
         {role: 'about'},
         {type: 'separator'},

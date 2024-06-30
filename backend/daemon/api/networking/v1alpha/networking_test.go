@@ -2,15 +2,16 @@ package networking
 
 import (
 	"context"
-	"mintter/backend/config"
-	"mintter/backend/core/coretest"
-	daemon "mintter/backend/daemon/api/daemon/v1alpha"
-	"mintter/backend/daemon/storage"
-	networking "mintter/backend/genproto/networking/v1alpha"
-	"mintter/backend/hyper"
-	"mintter/backend/logging"
-	"mintter/backend/mttnet"
-	"mintter/backend/pkg/future"
+	"seed/backend/config"
+	"seed/backend/core"
+	"seed/backend/core/coretest"
+	daemon "seed/backend/daemon/api/daemon/v1alpha"
+	"seed/backend/daemon/storage"
+	networking "seed/backend/genproto/networking/v1alpha"
+	"seed/backend/hyper"
+	"seed/backend/logging"
+	"seed/backend/mttnet"
+	"seed/backend/pkg/must"
 	"testing"
 	"time"
 
@@ -36,7 +37,7 @@ func TestNetworkingGetPeerInfo(t *testing.T) {
 
 func makeTestServer(t *testing.T, u coretest.Tester) *Server {
 	db := storage.MakeTestDB(t)
-	blobs := hyper.NewStorage(db, logging.New("mintter/hyper", "debug"))
+	blobs := hyper.NewStorage(db, logging.New("seed/hyper", "debug"))
 	_, err := daemon.Register(context.Background(), blobs, u.Account, u.Device.PublicKey, time.Now())
 	require.NoError(t, err)
 
@@ -46,7 +47,10 @@ func makeTestServer(t *testing.T, u coretest.Tester) *Server {
 	cfg.BootstrapPeers = nil
 	cfg.NoMetrics = true
 
-	n, err := mttnet.New(cfg, db, blobs, u.Identity, zap.NewNop())
+	ks := core.NewMemoryKeyStore()
+	must.Do(ks.StoreKey(context.Background(), "main", u.Account))
+
+	n, err := mttnet.New(cfg, u.Device, ks, db, blobs, zap.NewNop())
 	require.NoError(t, err)
 
 	errc := make(chan error, 1)
@@ -68,8 +72,5 @@ func makeTestServer(t *testing.T, u coretest.Tester) *Server {
 
 	t.Cleanup(cancel)
 
-	fut := future.New[*mttnet.Node]()
-	require.NoError(t, fut.Resolve(n))
-
-	return NewServer(blobs, fut.ReadOnly)
+	return NewServer(blobs, n)
 }

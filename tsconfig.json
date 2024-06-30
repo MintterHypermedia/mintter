@@ -3,9 +3,8 @@
     "strictNullChecks": true,
     "noUncheckedIndexedAccess": true,
     "paths": {
-      "@mintter/app/*": ["./frontend/packages/app/src/*"],
-      "@mintter/ui/*": ["./frontend/packages/ui/*"],
-      "@mintter/shared/*": ["./frontend/packages/shared/*"]
+      "@shm/ui/*": ["./frontend/packages/ui/*"],
+      "@shm/shared/*": ["./frontend/packages/shared/*"]
     },
     "plugins": [
       {
@@ -19,6 +18,6 @@
         "pathToApp": "frontend/apps/desktop"
       }
     ]
-  },
+  }
   // "extends": "expo/tsconfig.base"
 }

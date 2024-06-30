@@ -1,17 +1,13 @@
+import {AppContextProvider, StyleProvider} from '@/app-context-provider'
+import {AppIPC} from '@/app-ipc'
+import {WindowUtils} from '@/models/window-utils'
+import {NavigationContainer} from '@/utils/navigation-container'
+import {useListenAppEvent} from '@/utils/window-events'
 import type {Interceptor} from '@connectrpc/connect'
 import {createGrpcWebTransport} from '@connectrpc/connect-web'
-import {AppContextProvider, StyleProvider} from '@mintter/app/app-context'
-import {AppIPC} from '@mintter/app/app-ipc'
-import {AppErrorContent, RootAppError} from '@mintter/app/components/app-error'
-import {DaemonStatusProvider} from '@mintter/app/node-status-context'
-import Main from '@mintter/app/pages/main'
-import {AppQueryClient, getQueryClient} from '@mintter/app/query-client'
-import {NavigationContainer} from '@mintter/app/utils/navigation-container'
-import {useListenAppEvent} from '@mintter/app/utils/window-events'
-import {WindowUtils} from '@mintter/app/window-utils'
-import {API_HTTP_URL, createGRPCClient} from '@mintter/shared'
-import type {StateStream} from '@mintter/shared/src/utils/stream'
-import {Spinner, Toaster, YStack, toast, useStream} from '@mintter/ui'
+import {API_HTTP_URL, createGRPCClient} from '@shm/shared'
+import type {StateStream} from '@shm/shared/src/utils/stream'
+import {Spinner, Toaster, YStack, toast, useStream} from '@shm/ui'
 import '@tamagui/core/reset.css'
 import '@tamagui/font-inter/css/400.css'
 import '@tamagui/font-inter/css/700.css'
@@ -20,9 +16,13 @@ import React, {Suspense, useEffect, useMemo, useState} from 'react'
 import ReactDOM from 'react-dom/client'
 import {ErrorBoundary} from 'react-error-boundary'
 import superjson from 'superjson'
-import type {GoDaemonState} from './app-api'
+import {AccountWizardDialog} from './app-account'
+import {AppErrorContent, RootAppError} from './components/app-error'
+import type {GoDaemonState} from './daemon'
 import {createIPC} from './ipc'
+import Main from './pages/main'
 import type {AppInfoType} from './preload'
+import {AppQueryClient, getQueryClient} from './query-client'
 import './root.css'
 import {client, trpc} from './trpc'
 
@@ -51,8 +51,6 @@ const securitySensitiveMethods = new Set([
 ])
 const enabledLogMessages = new Set<string>([
   // 'Accounts.ListAccounts',
-  // 'Groups.GetGroup',
-  // 'Groups.ListContent',
   // 'Comments.ListComments',
   // etc.. add the messages you need to see here, please comment out before committing!
 ])
@@ -205,8 +203,6 @@ function MainApp({
           utils.gatewaySettings.getPushOnPublish.invalidate()
         } else if (value[0] === 'trpc.recents.getRecents') {
           utils.recents.getRecents.invalidate()
-        } else if (value[0] === 'trpc.recents.getDocVariants') {
-          utils.recents.getDocVariants.invalidate()
         } else if (value[0] === 'trpc.appSettings.getAutoUpdatePreference') {
           utils.appSettings.getAutoUpdatePreference.invalidate()
         } else if (queryClient.client) {
@@ -259,14 +255,13 @@ function MainApp({
                 window.initNavState
               }
             >
-              <DaemonStatusProvider>
-                <Main
-                  className={
-                    // this is used by editor.css which doesn't know tamagui styles, boooo!
-                    darkMode ? 'mintter-app-dark' : 'mintter-app-light'
-                  }
-                />
-              </DaemonStatusProvider>
+              <AccountWizardDialog />
+              <Main
+                className={
+                  // this is used by editor.css which doesn't know tamagui styles, boooo!
+                  darkMode ? 'seed-app-dark' : 'seed-app-light'
+                }
+              />
             </NavigationContainer>
             <Toaster
             // position="bottom-center"

@@ -2,58 +2,35 @@ package daemon
 
 import (
 	"context"
-	"mintter/backend/config"
-	"mintter/backend/core/coretest"
-	accounts "mintter/backend/daemon/api/accounts/v1alpha"
-	"mintter/backend/daemon/storage"
-	"mintter/backend/testutil"
+	"seed/backend/config"
+	"seed/backend/core"
+	"seed/backend/core/coretest"
+	storage "seed/backend/daemon/storage2"
+	"seed/backend/testutil"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
-
-// MakeTestApp creates a new daemon app for testing.
-func MakeTestApp(t *testing.T, name string, cfg config.Config, register bool) *App {
-	return makeTestApp(t, name, cfg, register)
-}
-
-// MakeTestConfig creates a new default config for testing.
-func MakeTestConfig(t *testing.T) config.Config {
-	return makeTestConfig(t)
-}
 
 func makeTestApp(t *testing.T, name string, cfg config.Config, register bool) *App {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	u := coretest.NewTester(name)
 
-	repo, err := storage.InitRepo(cfg.Base.DataDir, u.Device.Wrapped(), "debug")
+	repo, err := storage.Open(cfg.Base.DataDir, u.Device.Wrapped(), core.NewMemoryKeyStore(), "debug")
 	require.NoError(t, err)
 
-	app, err := Load(ctx, cfg, repo, "debug")
+	app, err := Load(ctx, cfg, repo)
 	require.NoError(t, err)
 	t.Cleanup(func() {
+		defer repo.Close()
 		cancel()
-		require.Equal(t, context.Canceled, app.Wait())
+		// require.Equal(t, context.Canceled, app.Wait())
+		require.NoError(t, app.Wait())
 	})
 
 	if register {
-		err = app.RPC.Daemon.RegisterAccount(ctx, u.Account)
-		require.NoError(t, err)
-
-		_, err = app.Net.Await(ctx)
-		require.NoError(t, err)
-
-		_, err = app.Storage.Identity().Await(ctx)
-		require.NoError(t, err)
-
-		prof := &accounts.Profile{
-			Alias: name,
-			Bio:   name + " bio",
-		}
-		acc, err := app.RPC.Accounts.UpdateProfile(ctx, prof)
-		require.NoError(t, err)
-		testutil.ProtoEqual(t, prof, acc.Profile, "profile update must return full profile")
+		require.NoError(t, app.RPC.Daemon.RegisterAccount(ctx, "main", u.Account))
 	}
 
 	return app

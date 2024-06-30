@@ -2,16 +2,17 @@ package mttnet
 
 import (
 	"context"
-	"mintter/backend/config"
-	"mintter/backend/core/coretest"
-	accounts "mintter/backend/daemon/api/accounts/v1alpha"
-	daemon "mintter/backend/daemon/api/daemon/v1alpha"
-	"mintter/backend/daemon/storage"
-	p2p "mintter/backend/genproto/p2p/v1alpha"
-	"mintter/backend/hyper"
-	"mintter/backend/logging"
-	"mintter/backend/pkg/future"
-	"mintter/backend/pkg/must"
+	"seed/backend/config"
+	"seed/backend/core"
+	"seed/backend/core/coretest"
+	accounts "seed/backend/daemon/api/accounts/v1alpha"
+	daemon "seed/backend/daemon/api/daemon/v1alpha"
+	"seed/backend/daemon/storage"
+	p2p "seed/backend/genproto/p2p/v1alpha"
+	"seed/backend/hyper"
+	"seed/backend/logging"
+	"seed/backend/pkg/future"
+	"seed/backend/pkg/must"
 	"testing"
 	"time"
 
@@ -43,16 +44,16 @@ func makeTestPeer(t *testing.T, name string) (*Node, context.CancelFunc) {
 
 	db := storage.MakeTestDB(t)
 
-	blobs := hyper.NewStorage(db, logging.New("mintter/hyper", "debug"))
+	blobs := hyper.NewStorage(db, logging.New("seed/hyper", "debug"))
 	_, err := daemon.Register(context.Background(), blobs, u.Account, u.Device.PublicKey, time.Now())
 	require.NoError(t, err)
 
 	// TODO(burdiyan): because key delegations are not changes to the account entity, it needs a profile update
 	// so that we can share our own account with other peers. This should be fixed, but in practice shouldn't
 	// cause major issues.
-	require.NoError(t, accounts.UpdateProfile(context.Background(), u.Identity, blobs, &accounts.Profile{
+	require.NoError(t, accounts.UpdateProfile(context.Background(), u.Account, blobs, &accounts.Profile{
 		Alias: name,
-		Bio:   "Test Mintter user",
+		Bio:   "Test Seed user",
 	}))
 
 	cfg := config.Default().P2P
@@ -61,7 +62,10 @@ func makeTestPeer(t *testing.T, name string) (*Node, context.CancelFunc) {
 	cfg.BootstrapPeers = nil
 	cfg.NoMetrics = true
 
-	n, err := New(cfg, db, blobs, u.Identity, must.Do2(zap.NewDevelopment()).Named(name), "debug")
+	ks := core.NewMemoryKeyStore()
+	require.NoError(t, ks.StoreKey(context.Background(), "main", u.Account))
+
+	n, err := New(cfg, u.Device, ks, db, blobs, must.Do2(zap.NewDevelopment()).Named(name))
 	require.NoError(t, err)
 
 	errc := make(chan error, 1)

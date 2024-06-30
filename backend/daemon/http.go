@@ -6,13 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"mintter/backend/graphql"
-	"mintter/backend/hyper"
-	"mintter/backend/pkg/cleanup"
-	"mintter/backend/wallet"
 	"net"
 	"net/http"
 	"runtime/debug"
+	"seed/backend/hyper"
+	"seed/backend/pkg/cleanup"
 	"strconv"
 	"time"
 
@@ -39,20 +37,10 @@ var (
 	date   string
 )
 
-// GenericHandler is to be called bay anyone wanting to register a
-// new http handler.
-type GenericHandler struct {
-	// Path where the endpoint will be hosted.
-	Path string
-	// HTTP handler.
-	Handler http.Handler
-	// RoutePrefix | RouteNav.
-	Mode int
-}
-
 // setupGraphQLHandlers sets up the GraphQL endpoints.
-func setupGraphQLHandlers(r *Router, wallet *wallet.Service) {
-	r.Handle("/graphql", corsMiddleware(graphql.Handler(wallet)), 0)
+// TODO(hm24) add the wallet service back.
+func setupGraphQLHandlers(r *Router, wallet any) {
+	// r.Handle("/graphql", corsMiddleware(graphql.Handler(wallet)), 0)
 	r.Handle("/playground", playground.Handler("GraphQL Playground", "/graphql"), RouteNav)
 }
 
@@ -146,9 +134,9 @@ func initHTTP(
 	clean *cleanup.Stack,
 	g *errgroup.Group,
 	blobs *hyper.Storage,
-	wallet *wallet.Service,
+	wallet any, // TODO(hm24) put the wallet back in.
 	ipfsHandler IPFSFileHandler,
-	extraHandlers ...GenericHandler,
+	extraHandlers ...func(*Router),
 ) (srv *http.Server, lis net.Listener, err error) {
 	router := &Router{r: mux.NewRouter()}
 
@@ -161,8 +149,8 @@ func initHTTP(
 	setupGraphQLHandlers(router, wallet)
 	setupIPFSFileHandlers(router, ipfsHandler)
 	setupGRPCWebHandler(router, rpc)
-	for _, handler := range extraHandlers {
-		router.Handle(handler.Path, handler.Handler, handler.Mode)
+	for _, handle := range extraHandlers {
+		handle(router)
 	}
 	router.Handle("/", http.HandlerFunc(router.Index), 0)
 
@@ -258,13 +246,13 @@ func buildInfoHandler() http.Handler {
 
 var (
 	mInFlightGauge = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "mintter_http_requests_in_flight",
+		Name: "seed_http_requests_in_flight",
 		Help: "Number of HTTP requests currently being served.",
 	})
 
 	mCounter = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "mintter_http_requests_total",
+			Name: "seed_http_requests_total",
 			Help: "Total number of HTTP requests served.",
 		},
 		[]string{"code", "method"},
@@ -272,7 +260,7 @@ var (
 
 	mDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "mintter_http_request_duration_seconds",
+			Name:    "seed_http_request_duration_seconds",
 			Help:    "HTTP request latencies.",
 			Buckets: []float64{.25, .5, 1, 2.5, 5, 10},
 		},

@@ -3,18 +3,18 @@ package networking
 import (
 	"context"
 	"fmt"
-	"mintter/backend/core"
-	networking "mintter/backend/genproto/networking/v1alpha"
-	"mintter/backend/hyper"
-	"mintter/backend/hyper/hypersql"
-	"mintter/backend/ipfs"
-	"mintter/backend/mttnet"
-	"mintter/backend/pkg/future"
 	"net/netip"
+	"seed/backend/core"
+	networking "seed/backend/genproto/networking/v1alpha"
+	"seed/backend/hyper"
+	"seed/backend/hyper/hypersql"
+	"seed/backend/ipfs"
+	"seed/backend/mttnet"
 	"strings"
 
 	"crawshaw.io/sqlite"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -22,15 +22,20 @@ import (
 // Server implements the networking API.
 type Server struct {
 	blobs *hyper.Storage
-	net   *future.ReadOnly[*mttnet.Node]
+	net   *mttnet.Node
 }
 
 // NewServer returns a new networking API server.
-func NewServer(blobs *hyper.Storage, node *future.ReadOnly[*mttnet.Node]) *Server {
+func NewServer(blobs *hyper.Storage, node *mttnet.Node) *Server {
 	return &Server{
 		blobs: blobs,
 		net:   node,
 	}
+}
+
+// RegisterServer registers the server with the gRPC server.
+func (srv *Server) RegisterServer(rpc grpc.ServiceRegistrar) {
+	networking.RegisterNetworkingServer(rpc, srv)
 }
 
 // Connect implements the Connect RPC method.
@@ -48,10 +53,7 @@ func (srv *Server) Connect(ctx context.Context, in *networking.ConnectRequest) (
 		return nil, status.Errorf(codes.InvalidArgument, "bad addrs: %v", err)
 	}
 
-	net, err := srv.getNet()
-	if err != nil {
-		return nil, err
-	}
+	net := srv.net
 
 	if err := net.ForceConnect(ctx, info); err != nil {
 		return nil, err
@@ -62,14 +64,14 @@ func (srv *Server) Connect(ctx context.Context, in *networking.ConnectRequest) (
 
 // ListPeers filters peers by status. If no status provided, it lists all peers.
 func (srv *Server) ListPeers(ctx context.Context, in *networking.ListPeersRequest) (*networking.ListPeersResponse, error) {
-	net, err := srv.getNet()
-	if err != nil {
-		return nil, err
-	}
+	net := srv.net
 
 	out := &networking.ListPeersResponse{}
 
-	var dels []hypersql.KeyDelegationsListAllResult
+	var (
+		dels []hypersql.KeyDelegationsListAllResult
+		err  error
+	)
 	if err := srv.blobs.Query(ctx, func(conn *sqlite.Conn) error {
 		dels, err = hypersql.KeyDelegationsListAll(conn)
 		return err
@@ -117,10 +119,7 @@ func (srv *Server) GetPeerInfo(ctx context.Context, in *networking.GetPeerInfoRe
 		return nil, status.Error(codes.InvalidArgument, "must specify device id")
 	}
 
-	net, err := srv.getNet()
-	if err != nil {
-		return nil, err
-	}
+	net := srv.net
 
 	pid, err := peer.Decode(in.DeviceId)
 	if err != nil {
@@ -165,13 +164,4 @@ func (srv *Server) GetPeerInfo(ctx context.Context, in *networking.GetPeerInfoRe
 	}
 
 	return resp, nil
-}
-
-func (srv *Server) getNet() (*mttnet.Node, error) {
-	net, ok := srv.net.Get()
-	if !ok {
-		return nil, status.Errorf(codes.FailedPrecondition, "account is not initialized yet")
-	}
-
-	return net, nil
 }

@@ -1,9 +1,9 @@
-import {join} from "path";
-import {execFileSync, spawn} from "child_process";
-import {cwd} from "process";
-import {homedir, platform} from "os";
-import {existsSync} from "fs";
+import { execFileSync, spawn } from "child_process";
+import { existsSync } from "fs";
 import pkg from "fs-extra";
+import { homedir, platform } from "os";
+import { join } from "path";
+import { cwd } from "process";
 const {mkdirpSync, moveSync} = pkg;
 const home = homedir();
 
@@ -13,16 +13,16 @@ if (platform() !== "darwin") {
   );
 }
 
-const mintterDir = join(home, "Library", "Application Support", "Mintter.dev");
-const mintterSiteDir = join(
+const seedDir = join(home, "Library", "Application Support", "Seed.dev");
+const seedSiteDir = join(
   home,
   "Library",
   "Application Support",
-  "Mintter.site"
+  "Seed.site"
 );
 
-const mintterArchive = join(home, "MintterArchive");
-mkdirpSync(mintterArchive);
+const seedArchive = join(home, "SeedArchive");
+mkdirpSync(seedArchive);
 
 function getFormattedDateTime() {
   const now = new Date();
@@ -36,13 +36,13 @@ function getFormattedDateTime() {
 
 const nowLabel = getFormattedDateTime();
 
-if (existsSync(mintterDir)) {
-  console.log(`Mintter App Exists. Moving to MintterArchive`);
-  moveSync(mintterDir, join(mintterArchive, `Mintter.dev.${nowLabel}`));
+if (existsSync(seedDir)) {
+  console.log(`Seed App Exists. Moving to Seed`);
+  moveSync(seedDir, join(seedArchive, `Seed.dev.${nowLabel}`));
 }
-if (existsSync(mintterSiteDir)) {
-  console.log(`Mintter Site Exists. Moving to MintterArchive`);
-  moveSync(mintterSiteDir, join(mintterArchive, `Mintter.site.${nowLabel}`));
+if (existsSync(seedSiteDir)) {
+  console.log(`Seed Site Exists. Moving to SeedArchive`);
+  moveSync(seedSiteDir, join(seedArchive, `Seed.site.${nowLabel}`));
 }
 
 const TESTNET_NAME = "";
@@ -51,7 +51,7 @@ const desktopProcess = spawn("./dev", ["run-desktop"], {
   cwd: cwd(),
   env: {
     ...process.env,
-    MINTTER_P2P_TESTNET_NAME: TESTNET_NAME,
+    SEED_P2P_TESTNET_NAME: TESTNET_NAME,
   },
   stdio: "inherit",
 });
@@ -59,13 +59,13 @@ const desktopProcess = spawn("./dev", ["run-desktop"], {
 const BASE_PORT = 63000;
 
 // site cmd
-// MINTTER_P2P_TESTNET_NAME="dev" go run ./backend/cmd/mintter-site -data-dir=~/.mttsite -p2p.port=61000 --http.port=61001 -p2p.no-relay -grpc.port=61002 http://127.0.0.1:61001
+// SEED_P2P_TESTNET_NAME="dev" go run ./backend/cmd/seed-site -data-dir=~/.mttsite -p2p.port=61000 --http.port=61001 -p2p.no-relay -grpc.port=61002 http://127.0.0.1:61001
 const siteDaemonProcess = spawn(
   "go",
   [
     "run",
-    "./backend/cmd/mintter-site",
-    `-data-dir=${mintterSiteDir}`,
+    "./backend/cmd/seed-site",
+    `-data-dir=${seedSiteDir}`,
     `-p2p.port=${BASE_PORT}`,
     `--http.port=${BASE_PORT + 1}`,
     `-p2p.no-relay`,
@@ -76,7 +76,7 @@ const siteDaemonProcess = spawn(
     cwd: cwd(),
     env: {
       ...process.env,
-      MINTTER_P2P_TESTNET_NAME: TESTNET_NAME,
+      SEED_P2P_TESTNET_NAME: TESTNET_NAME,
     },
     stdio: "inherit",
   }
@@ -99,7 +99,7 @@ setTimeout(() => {
   execFileSync("open", [`http://localhost:${BASE_PORT + 4}`]);
 }, 2_000);
 
-// console.log({mintterDir, time: `${getFormattedDateTime()}`});
+// console.log({seedDir, time: `${getFormattedDateTime()}`});
 
 console.log(`==============
 farm, image, almost, ignore, adapt, host, broom, oil, minute, food, combine, hospital

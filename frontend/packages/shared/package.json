@@ -1,5 +1,5 @@
 {
-  "name": "@mintter/shared",
+  "name": "@shm/shared",
   "version": "0.1.0",
   "main": "src/index.ts",
   "scripts": {
@@ -12,12 +12,12 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "@mintter/prettier": "*",
-    "typescript": "5.1.6",
+    "@shm/prettier": "*",
+    "typescript": "5.5.2",
     "vitest": "0.34.2"
   },
   "dependencies": {
-    "@bufbuild/protobuf": "1.4.1",
+    "@bufbuild/protobuf": "^1.10.0",
     "@connectrpc/connect-web": "1.1.3",
     "react-tweet": "^3.2.0"
   }

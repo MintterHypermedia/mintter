@@ -2,15 +2,14 @@ package accounts
 
 import (
 	context "context"
-	"mintter/backend/core"
-	"mintter/backend/core/coretest"
-	daemon "mintter/backend/daemon/api/daemon/v1alpha"
-	"mintter/backend/daemon/storage"
-	accounts "mintter/backend/genproto/accounts/v1alpha"
-	"mintter/backend/hyper"
-	"mintter/backend/logging"
-	"mintter/backend/pkg/future"
-	"mintter/backend/testutil"
+	"seed/backend/core"
+	"seed/backend/core/coretest"
+	daemon "seed/backend/daemon/api/daemon/v1alpha"
+	"seed/backend/daemon/storage"
+	accounts "seed/backend/genproto/accounts/v1alpha"
+	"seed/backend/hyper"
+	"seed/backend/logging"
+	"seed/backend/testutil"
 	"testing"
 	"time"
 
@@ -125,13 +124,13 @@ func newTestServer(t *testing.T, name string) *Server {
 
 	pool := storage.MakeTestDB(t)
 	ctx := context.Background()
-	blobs := hyper.NewStorage(pool, logging.New("mintter/hyper", "debug"))
+	blobs := hyper.NewStorage(pool, logging.New("seed/hyper", "debug"))
 
 	_, err := daemon.Register(ctx, blobs, u.Account, u.Device.PublicKey, time.Now().UTC().Add(-1*time.Hour))
 	require.NoError(t, err)
 
-	fut := future.New[core.Identity]()
-	require.NoError(t, fut.Resolve(u.Identity))
+	ks := core.NewMemoryKeyStore()
+	require.NoError(t, ks.StoreKey(ctx, "main", u.Account))
 
-	return NewServer(fut.ReadOnly, blobs)
+	return NewServer(ks, blobs)
 }

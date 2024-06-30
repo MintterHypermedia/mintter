@@ -7,28 +7,25 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
-	"mintter/backend/core"
-	"mintter/backend/daemon/api/documents/v1alpha/docmodel"
-	groups "mintter/backend/daemon/api/groups/v1alpha"
-	"mintter/backend/daemon/apiutil"
-	documents "mintter/backend/genproto/documents/v1alpha"
-	groups_proto "mintter/backend/genproto/groups/v1alpha"
-	"mintter/backend/hlc"
-	"mintter/backend/mttnet"
+	"seed/backend/core"
+	"seed/backend/daemon/api/documents/v1alpha/docmodel"
+	"seed/backend/daemon/apiutil"
+	documents "seed/backend/genproto/documents/v1alpha"
+	"seed/backend/hlc"
+	"seed/backend/mttnet"
 	"strings"
 	"time"
 
-	"mintter/backend/hyper"
-	"mintter/backend/hyper/hypersql"
-	"mintter/backend/logging"
-	"mintter/backend/pkg/colx"
-	"mintter/backend/pkg/dqb"
-	"mintter/backend/pkg/future"
+	"seed/backend/hyper"
+	"seed/backend/hyper/hypersql"
+	"seed/backend/logging"
+	"seed/backend/pkg/dqb"
 
 	"crawshaw.io/sqlite"
 	"crawshaw.io/sqlite/sqlitex"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -36,7 +33,7 @@ import (
 )
 
 // Discoverer is a subset of the syncing service that
-// is able to discover given Mintter objects, optionally specifying versions.
+// is able to discover given Hyper media objects, optionally specifying versions.
 type Discoverer interface {
 	DiscoverObject(context.Context, hyper.EntityID, hyper.Version) error
 	// TODO: this is here temporarily. Eventually we need to provide from the vcs
@@ -54,23 +51,33 @@ type GatewayClient interface {
 // Server implements DocumentsServer gRPC API.
 type Server struct {
 	db       *sqlitex.Pool
-	me       *future.ReadOnly[core.Identity]
+	keys     core.KeyStore
 	disc     Discoverer
 	blobs    *hyper.Storage
 	gwClient GatewayClient
 }
 
 // NewServer creates a new RPC handler.
-func NewServer(me *future.ReadOnly[core.Identity], db *sqlitex.Pool, disc Discoverer, gwClient GatewayClient, LogLevel string) *Server {
+func NewServer(keys core.KeyStore, db *sqlitex.Pool, disc Discoverer, gwClient GatewayClient, LogLevel string) *Server {
 	srv := &Server{
 		db:       db,
-		me:       me,
+		keys:     keys,
 		disc:     disc,
-		blobs:    hyper.NewStorage(db, logging.New("mintter/hyper", LogLevel)),
+		blobs:    hyper.NewStorage(db, logging.New("seed/hyper", LogLevel)),
 		gwClient: gwClient,
 	}
 
 	return srv
+}
+
+// RegisterServer registers the server with the gRPC server.
+func (srv *Server) RegisterServer(rpc grpc.ServiceRegistrar) {
+	documents.RegisterContentGraphServer(rpc, srv)
+	documents.RegisterDraftsServer(rpc, srv)
+	documents.RegisterPublicationsServer(rpc, srv)
+	documents.RegisterChangesServer(rpc, srv)
+	documents.RegisterCommentsServer(rpc, srv)
+	documents.RegisterMergeServer(rpc, srv)
 }
 
 // CreateDraft implements the corresponding gRPC method.
@@ -157,7 +164,7 @@ func (api *Server) UpdateDraft(ctx context.Context, in *documents.UpdateDraftReq
 		return nil, status.Errorf(codes.InvalidArgument, "must send some changes to apply to the document")
 	}
 
-	me, err := api.me.Await(ctx)
+	me, err := api.keys.GetKey(ctx, "main")
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +184,7 @@ func (api *Server) UpdateDraft(ctx context.Context, in *documents.UpdateDraftReq
 		return nil, err
 	}
 
-	mut, err := docmodel.New(draft.Entity, me.DeviceKey(), del)
+	mut, err := docmodel.New(draft.Entity, me, del)
 	if err != nil {
 		return nil, err
 	}
@@ -632,73 +639,75 @@ func (api *Server) loadPublication(ctx context.Context, docid hyper.EntityID, ve
 
 // PushPublication implements the corresponding gRPC method.
 func (api *Server) PushPublication(ctx context.Context, in *documents.PushPublicationRequest) (*emptypb.Empty, error) {
-	if in.DocumentId == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "must specify publication ID")
-	}
+	panic("TODO push publication")
 
-	if in.Url == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "must specify an url")
-	}
+	// if in.DocumentId == "" {
+	// 	return nil, status.Errorf(codes.InvalidArgument, "must specify publication ID")
+	// }
 
-	// If no gwClient is set we can't do anything else.
-	if api.gwClient == nil {
-		return nil, status.Errorf(codes.FailedPrecondition, "there is no gwClient definition")
-	}
+	// if in.Url == "" {
+	// 	return nil, status.Errorf(codes.InvalidArgument, "must specify an url")
+	// }
 
-	eid := hyper.EntityID(in.DocumentId)
+	// // If no gwClient is set we can't do anything else.
+	// if api.gwClient == nil {
+	// 	return nil, status.Errorf(codes.FailedPrecondition, "there is no gwClient definition")
+	// }
 
-	entity, err := api.blobs.LoadEntity(ctx, eid)
+	// eid := hyper.EntityID(in.DocumentId)
 
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "unable to get entity[%s]: %v", eid.String(), err)
-	}
+	// entity, err := api.blobs.LoadEntity(ctx, eid)
 
-	if entity == nil {
-		return nil, status.Errorf(codes.NotFound, "no published changes for entity %s", eid.String())
-	}
+	// if err != nil {
+	// 	return nil, status.Errorf(codes.Internal, "unable to get entity[%s]: %v", eid.String(), err)
+	// }
 
-	conn, cancelFcn, err := api.db.Conn(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "unable to get db connection: %v", err)
-	}
-	defer cancelFcn()
+	// if entity == nil {
+	// 	return nil, status.Errorf(codes.NotFound, "no published changes for entity %s", eid.String())
+	// }
 
-	gdb, err := hypersql.EntitiesLookupID(conn, entity.ID().String())
-	if err != nil {
-		return nil, status.Errorf(codes.NotFound, "unable to find entity id [%s]: %v", entity.ID().String(), err)
-	}
-	if gdb.ResourcesID == 0 {
-		return nil, status.Errorf(codes.NotFound, "document %s not found", entity.ID().String())
-	}
+	// conn, cancelFcn, err := api.db.Conn(ctx)
+	// if err != nil {
+	// 	return nil, status.Errorf(codes.Internal, "unable to get db connection: %v", err)
+	// }
+	// defer cancelFcn()
 
-	cids := []cid.Cid{}
-	err = sqlitex.Exec(conn, groups.QCollectBlobs(), func(stmt *sqlite.Stmt) error {
-		var (
-			id        int64
-			codec     int64
-			multihash []byte
-		)
-		stmt.Scan(&id, &codec, &multihash)
+	// gdb, err := hypersql.EntitiesLookupID(conn, entity.ID().String())
+	// if err != nil {
+	// 	return nil, status.Errorf(codes.NotFound, "unable to find entity id [%s]: %v", entity.ID().String(), err)
+	// }
+	// if gdb.ResourcesID == 0 {
+	// 	return nil, status.Errorf(codes.NotFound, "document %s not found", entity.ID().String())
+	// }
 
-		c := cid.NewCidV1(uint64(codec), multihash)
-		cids = append(cids, c)
-		return nil
-	}, gdb.ResourcesID)
-	if err != nil {
-		return nil, status.Errorf(codes.NotFound, "couldn't find referenced materials for document %s: %v", entity.ID().String(), err)
-	}
+	// cids := []cid.Cid{}
+	// err = sqlitex.Exec(conn, groups.QCollectBlobs(), func(stmt *sqlite.Stmt) error {
+	// 	var (
+	// 		id        int64
+	// 		codec     int64
+	// 		multihash []byte
+	// 	)
+	// 	stmt.Scan(&id, &codec, &multihash)
 
-	gc, err := api.gwClient.GatewayClient(ctx, in.Url)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get site client: %v", err)
-	}
+	// 	c := cid.NewCidV1(uint64(codec), multihash)
+	// 	cids = append(cids, c)
+	// 	return nil
+	// }, gdb.ResourcesID)
+	// if err != nil {
+	// 	return nil, status.Errorf(codes.NotFound, "couldn't find referenced materials for document %s: %v", entity.ID().String(), err)
+	// }
 
-	if _, err := gc.PublishBlobs(ctx, &groups_proto.PublishBlobsRequest{
-		Blobs: colx.SliceMap(cids, cid.Cid.String),
-	}); err != nil {
-		return nil, status.Errorf(codes.FailedPrecondition, "failed to push blobs to the gateway: %v", err)
-	}
-	return &emptypb.Empty{}, nil
+	// gc, err := api.gwClient.GatewayClient(ctx, in.Url)
+	// if err != nil {
+	// 	return nil, status.Errorf(codes.Internal, "failed to get site client: %v", err)
+	// }
+
+	// if _, err := gc.PublishBlobs(ctx, &groups_proto.PublishBlobsRequest{
+	// 	Blobs: colx.SliceMap(cids, cid.Cid.String),
+	// }); err != nil {
+	// 	return nil, status.Errorf(codes.FailedPrecondition, "failed to push blobs to the gateway: %v", err)
+	// }
+	// return &emptypb.Empty{}, nil
 }
 
 var qListAllPublications = dqb.Str(`
@@ -806,11 +815,6 @@ var qListTrustedPublications = dqb.Str(`
 
 // ListPublications implements the corresponding gRPC method.
 func (api *Server) ListPublications(ctx context.Context, in *documents.ListPublicationsRequest) (*documents.ListPublicationsResponse, error) {
-	me, ok := api.me.Get()
-	if !ok {
-		return nil, fmt.Errorf("account is not initialized yet")
-	}
-
 	if err := apiutil.ValidatePageSize(&in.PageSize); err != nil {
 		return nil, err
 	}
@@ -825,7 +829,7 @@ func (api *Server) ListPublications(ctx context.Context, in *documents.ListPubli
 		cursor.UpdateTime = math.MaxInt64
 		cursor.IRI = string([]rune{0xFFFF}) // Max string.
 	} else {
-		if err := apiutil.DecodePageToken(in.PageToken, &cursor, me.DeviceKey()); err != nil {
+		if err := apiutil.DecodePageToken(in.PageToken, &cursor, nil); err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "%v", err)
 		}
 	}
@@ -846,7 +850,7 @@ func (api *Server) ListPublications(ctx context.Context, in *documents.ListPubli
 		return sqlitex.Exec(conn, q(), func(stmt *sqlite.Stmt) error {
 			if count == in.PageSize {
 				var err error
-				resp.NextPageToken, err = apiutil.EncodePageToken(lastCursor, me.DeviceKey())
+				resp.NextPageToken, err = apiutil.EncodePageToken(lastCursor, nil)
 				return err
 			}
 			count++
@@ -1058,16 +1062,8 @@ func (api *Server) RebaseChanges(ctx context.Context, in *documents.RebaseChange
 	return mut.Hydrate(ctx, api.blobs)
 }
 
-func (api *Server) getMe() (core.Identity, error) {
-	me, ok := api.me.Get()
-	if !ok {
-		return core.Identity{}, status.Errorf(codes.FailedPrecondition, "account is not initialized yet")
-	}
-	return me, nil
-}
-
 func (api *Server) getDelegation(ctx context.Context) (cid.Cid, error) {
-	me, err := api.getMe()
+	me, err := api.keys.GetKey(ctx, "main")
 	if err != nil {
 		return cid.Undef, err
 	}
@@ -1076,8 +1072,8 @@ func (api *Server) getDelegation(ctx context.Context) (cid.Cid, error) {
 
 	// TODO(burdiyan): need to cache this. Makes no sense to always do this.
 	if err := api.blobs.Query(ctx, func(conn *sqlite.Conn) error {
-		acc := me.Account().Principal()
-		dev := me.DeviceKey().Principal()
+		acc := me.Principal()
+		dev := me.Principal()
 
 		list, err := hypersql.KeyDelegationsList(conn, acc)
 		if err != nil {
